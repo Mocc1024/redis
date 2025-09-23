@@ -233,4 +233,3 @@ class SeckillQueue {
         return (int)$this->redis->sCard($this->successKey);
     }
 }
-?>
