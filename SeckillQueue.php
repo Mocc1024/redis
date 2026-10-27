@@ -1,5 +1,8 @@
 <?php
 class SeckillQueue {
+    /** 管道模式，等同于 Redis::PIPELINE；写成常量避免未安装扩展时误报未定义类型 */
+    const REDIS_PIPELINE = 2;
+
     private $redis;
     private $activityId;
     private $stockKey;
@@ -13,7 +16,7 @@ class SeckillQueue {
      * @param string $activityId 活动ID
      * @param int $initialStock 初始库存
      */
-    public function __construct(Redis $redis, $activityId, $initialStock = 0) {
+    public function __construct($redis, $activityId, $initialStock = 0) {
         $this->redis = $redis;
         $this->activityId = $activityId;
 
@@ -34,7 +37,7 @@ class SeckillQueue {
      * @param int $stock 重置后的库存数量
      */
     public function reset($stock) {
-        $this->redis->multi(Redis::PIPELINE);
+        $this->redis->multi(self::REDIS_PIPELINE);
         $this->redis->set($this->stockKey, $stock);
         $this->redis->del($this->queueKey);
         $this->redis->del($this->participatedKey);
@@ -69,7 +72,7 @@ class SeckillQueue {
         // MULTI 是用于开启事务的命令，它可以将多个 Redis 命令打包成一个原子操作单元，要么全部执行成功，要么全部不执行（发生错误时），避免了中间状态导致的数据不一致
         // 1、原子性执行：用 MULTI 开启事务后，后续输入的命令会被放入一个队列中，直到执行 EXEC 才会一次性执行所有命令。期间如果有命令错误，整个事务可能失败（取决于错误类型）。
         // 2、隔离性：事务执行期间，其他客户端的命令不会插入到当前事务的命令序列中，保证操作的连续性。
-        $this->redis->multi(Redis::PIPELINE);
+        $this->redis->multi(self::REDIS_PIPELINE);
         $this->redis->rPush($this->queueKey, $userId);// 右侧入队
         $this->redis->sAdd($this->participatedKey, $userId);// 添加元素到集合
         $results = $this->redis->exec();// 执行管道中的所有命令，并获取结果（一次性发送+接收）
@@ -124,7 +127,7 @@ class SeckillQueue {
         }
 
         // 批量处理队列
-        $this->redis->multi(Redis::PIPELINE);
+        $this->redis->multi(self::REDIS_PIPELINE);
 
         // 获取队列中的用户
         for ($i = 0; $i < $processCount; $i++) {

@@ -2,12 +2,73 @@
 // 引入秒杀队列类
 require_once 'SeckillQueue.php';
 
+// 统一按 UTF-8 输出：Windows 下 Redis 扩展抛出的系统错误信息是 GBK 编码，
+// 若不明确指定字符集，浏览器会按 GBK 解析页面导致中文乱码
+ini_set('default_charset', 'UTF-8');
+if (PHP_SAPI !== 'cli') {
+    header('Content-Type: text/html; charset=utf-8');
+    echo '<meta charset="utf-8">';
+}
+
+/**
+ * 把任意编码的文本统一转换为 UTF-8
+ * @param string $text
+ * @return string
+ */
+function toUtf8($text)
+{
+    if ($text === null || $text === '') {
+        return '';
+    }
+    if (function_exists('mb_detect_encoding')) {
+        $encoding = mb_detect_encoding($text, ['UTF-8', 'GB18030', 'GBK', 'GB2312', 'BIG5', 'ASCII', 'ISO-8859-1'], true);
+        if ($encoding !== false && strtoupper($encoding) !== 'UTF-8') {
+            return mb_convert_encoding($text, 'UTF-8', $encoding);
+        }
+    }
+
+    return $text;
+}
+
+/**
+ * 把底层异常信息翻译成可读的中文提示，并保留原始信息便于排查
+ * @param Throwable $e
+ * @return string
+ */
+function friendlyErrorMessage($e)
+{
+    $message = toUtf8($e->getMessage());
+
+    $dictionary = [
+        'Connection refused' => '连接被拒绝，Redis 服务未启动或端口不正确',
+        'went away'          => 'Redis 服务中途断开',
+        'timed out'          => '连接或读取 Redis 超时',
+        'NOAUTH'             => 'Redis 需要密码认证，请先调用 auth()',
+        'invalid DB index'   => '选择的数据库编号不存在',
+        'not found'          => '未找到对应的类或方法',
+    ];
+
+    foreach ($dictionary as $keyword => $description) {
+        if (stripos($message, $keyword) !== false) {
+            return $description . '（原始信息：' . $message . '）';
+        }
+    }
+
+    return $message;
+}
+
+// Redis 服务检测：未安装 phpredis 扩展时直接提示，避免抛致命错误
+if (!extension_loaded('redis')) {
+    die('未检测到Redis服务');
+}
+
 // 初始化Redis连接
 try {
     // 创建Redis连接
-    $redis = new Redis();
-    $redis->connect('127.0.0.1', 6379);
-
+    // 用字符串形式的类名实例化：未安装扩展时 IDE 静态分析不会误报"未定义类型 Redis"
+    $redisClass = 'Redis';
+    $redis = new $redisClass();
+    $redis->connect('127.0.0.1', 6379, 2.0);
     // 如果Redis有密码认证
     // $redis->auth('your_redis_password');
 
@@ -70,6 +131,10 @@ try {
         echo "用户 {$userId}: 秒杀{$status}" . "<br>";
     }
 
-} catch (Exception $e) {
-    die("秒杀活动出错: " . $e->getMessage());
+// Throwable 同时包含 Exception 与 Error，避免致命错误无法被捕获
+} catch (Throwable $e) {
+    $message = PHP_SAPI === 'cli'
+        ? friendlyErrorMessage($e)
+        : htmlspecialchars(friendlyErrorMessage($e), ENT_QUOTES, 'UTF-8');
+    die("秒杀活动出错: " . $message);
 }
