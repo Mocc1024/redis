@@ -76,7 +76,7 @@ try {
     $redis->select(0);
 
     // 秒杀活动配置
-    $activityId = 'seckill_phone_1111';
+    $activityId = 'Seckill_iPhone_Duo';
     $initialStock = 5; // 本次秒杀商品数量
 
     // 初始化秒杀队列
